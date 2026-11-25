@@ -1,0 +1,200 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable hardened security helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidEmotion(val) {
+      return val is string && val in ['JOYFUL', 'PEACEFUL', 'GRATEFUL', 'REFLECTIVE', 'WORRIED', 'SAD'];
+    }
+
+    function isValidPolarity(val) {
+      return val is string && val in ['POSITIVE', 'NEUTRAL', 'NEEDS_CARE'];
+    }
+
+    function isValidEntryType(val) {
+      return val is string && val in ['AUDIO', 'TEXT'];
+    }
+
+    function isValidTextScale(val) {
+      return val is string && val in ['STANDARD', 'LARGE', 'EXTRA_LARGE'];
+    }
+
+    // Entity 1: JournalEntry validation helper
+    function isValidJournalEntry(data, userId) {
+      return data.userId is string && data.userId == userId && data.userId == request.auth.uid && data.userId.size() <= 128 &&
+             data.dateKey is string && data.dateKey.size() == 10 && data.dateKey.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.content is string && data.content.size() >= 1 && data.content.size() <= 5000 &&
+             isValidEntryType(data.entryType) &&
+             (!('audioFileName' in data) || data.audioFileName == null || (data.audioFileName is string && data.audioFileName.size() <= 200)) &&
+             data.audioDurationSec is int && data.audioDurationSec >= 0 && data.audioDurationSec <= 3600 &&
+             isValidEmotion(data.primaryEmotion) &&
+             isValidPolarity(data.sentimentPolarity) &&
+             data.sentimentScore is int && data.sentimentScore >= 0 && data.sentimentScore <= 100 &&
+             (!('positiveHighlight' in data) || data.positiveHighlight == null || (data.positiveHighlight is string && data.positiveHighlight.size() <= 400)) &&
+             (!('promptUsed' in data) || data.promptUsed == null || (data.promptUsed is string && data.promptUsed.size() <= 300)) &&
+             data.keyTopics is list && data.keyTopics.size() <= 5 &&
+             (data.keyTopics.size() == 0 || (data.keyTopics[0] is string && data.keyTopics[0].size() <= 60)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // Entity 2: WeeklySummary validation helper
+    function isValidWeeklySummary(data, userId) {
+      return data.userId is string && data.userId == userId && data.userId == request.auth.uid && data.userId.size() <= 128 &&
+             data.weekLabel is string && data.weekLabel.size() >= 1 && data.weekLabel.size() <= 80 &&
+             data.headline is string && data.headline.size() >= 1 && data.headline.size() <= 160 &&
+             data.summaryText is string && data.summaryText.size() >= 1 && data.summaryText.size() <= 2000 &&
+             data.highlights is list && data.highlights.size() <= 5 &&
+             (data.highlights.size() == 0 || (data.highlights[0] is string && data.highlights[0].size() <= 300)) &&
+             data.encouragingClosing is string && data.encouragingClosing.size() >= 1 && data.encouragingClosing.size() <= 300 &&
+             data.positiveEntryCount is int && data.positiveEntryCount >= 0 && data.positiveEntryCount <= 500 &&
+             data.totalEntryCount is int && data.totalEntryCount >= 0 && data.totalEntryCount <= 500 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // Entity 3: UserPreferences validation helper
+    function isValidUserPreferences(data, userId) {
+      return data.userId is string && data.userId == userId && data.userId == request.auth.uid && data.userId.size() <= 128 &&
+             data.morningReminderEnabled is bool &&
+             data.morningHour is int && data.morningHour >= 0 && data.morningHour <= 23 &&
+             data.morningMinute is int && data.morningMinute >= 0 && data.morningMinute <= 59 &&
+             data.eveningReminderEnabled is bool &&
+             data.eveningHour is int && data.eveningHour >= 0 && data.eveningHour <= 23 &&
+             data.eveningMinute is int && data.eveningMinute >= 0 && data.eveningMinute <= 59 &&
+             data.reminderMessage is string && data.reminderMessage.size() >= 1 && data.reminderMessage.size() <= 200 &&
+             data.highContrastDark is bool &&
+             isValidTextScale(data.textScaleLevel) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /users/{userId} {
+      allow read, write: if false;
+
+      match /journal_entries/{entryId} {
+        allow get: if isOwner(userId) && isValidId(entryId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(entryId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'dateKey', 'title', 'content', 'entryType',
+                           'audioDurationSec', 'primaryEmotion', 'sentimentPolarity',
+                           'sentimentScore', 'keyTopics', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'dateKey', 'title', 'content', 'entryType',
+                           'audioFileName', 'audioDurationSec', 'primaryEmotion',
+                           'sentimentPolarity', 'sentimentScore', 'positiveHighlight',
+                           'promptUsed', 'keyTopics', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidJournalEntry(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(entryId) &&
+                         isValidJournalEntry(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'title', 'content', 'primaryEmotion', 'sentimentPolarity',
+                           'sentimentScore', 'positiveHighlight', 'keyTopics', 'updatedAt'
+                         ]);
+
+        allow delete: if isOwner(userId) && isValidId(entryId);
+      }
+
+      match /weekly_summaries/{weekId} {
+        allow get: if isOwner(userId) && isValidId(weekId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(weekId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'weekLabel', 'headline', 'summaryText',
+                           'highlights', 'encouragingClosing', 'positiveEntryCount',
+                           'totalEntryCount', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'weekLabel', 'headline', 'summaryText',
+                           'highlights', 'encouragingClosing', 'positiveEntryCount',
+                           'totalEntryCount', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidWeeklySummary(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(weekId) &&
+                         isValidWeeklySummary(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'weekLabel', 'headline', 'summaryText', 'highlights',
+                           'encouragingClosing', 'positiveEntryCount', 'totalEntryCount', 'updatedAt'
+                         ]);
+
+        allow delete: if isOwner(userId) && isValidId(weekId);
+      }
+
+      match /preferences/{prefId} {
+        allow get: if isOwner(userId) && isValidId(prefId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(prefId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'morningReminderEnabled', 'morningHour', 'morningMinute',
+                           'eveningReminderEnabled', 'eveningHour', 'eveningMinute',
+                           'reminderMessage', 'highContrastDark', 'textScaleLevel',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'morningReminderEnabled', 'morningHour', 'morningMinute',
+                           'eveningReminderEnabled', 'eveningHour', 'eveningMinute',
+                           'reminderMessage', 'highContrastDark', 'textScaleLevel',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidUserPreferences(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(prefId) &&
+                         isValidUserPreferences(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'morningReminderEnabled', 'morningHour', 'morningMinute',
+                           'eveningReminderEnabled', 'eveningHour', 'eveningMinute',
+                           'reminderMessage', 'highContrastDark', 'textScaleLevel', 'updatedAt'
+                         ]);
+
+        allow delete: if isOwner(userId) && isValidId(prefId);
+      }
+    }
+  }
+}

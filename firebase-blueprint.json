@@ -1,0 +1,237 @@
+{
+  "entities": {
+    "JournalEntry": {
+      "title": "JournalEntry",
+      "description": "A user-authored audio or written journal entry with NLP emotion and sentiment analysis.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated owner UID matching request.auth.uid."
+        },
+        "dateKey": {
+          "type": "string",
+          "description": "Calendar day key in YYYY-MM-DD format for daily emotion accumulation."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short, clear title for the memory entry."
+        },
+        "content": {
+          "type": "string",
+          "description": "Written journal text or transcribed audio journal content."
+        },
+        "entryType": {
+          "type": "string",
+          "enum": ["AUDIO", "TEXT"],
+          "description": "Indicates whether the entry originated from an audio recording or typed text."
+        },
+        "audioFileName": {
+          "type": "string",
+          "description": "Optional local private audio filename for on-device playback."
+        },
+        "audioDurationSec": {
+          "type": "integer",
+          "description": "Duration of the audio recording in seconds (0 for text-only entries)."
+        },
+        "primaryEmotion": {
+          "type": "string",
+          "enum": ["JOYFUL", "PEACEFUL", "GRATEFUL", "REFLECTIVE", "WORRIED", "SAD"],
+          "description": "Primary emotion category assigned by NLP sentiment analysis or user selection."
+        },
+        "sentimentPolarity": {
+          "type": "string",
+          "enum": ["POSITIVE", "NEUTRAL", "NEEDS_CARE"],
+          "description": "Overall sentiment classification of the entry."
+        },
+        "sentimentScore": {
+          "type": "integer",
+          "description": "Positivity and emotional well-being score from 0 to 100."
+        },
+        "positiveHighlight": {
+          "type": "string",
+          "description": "Optional warm highlight or supportive reflection extracted by AI."
+        },
+        "promptUsed": {
+          "type": "string",
+          "description": "Optional AI journaling starter prompt that inspired this entry."
+        },
+        "keyTopics": {
+          "type": "array",
+          "description": "Up to 5 short topic labels identified from the entry."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp() upon creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp() upon creation and updates."
+        }
+      },
+      "required": [
+        "userId",
+        "dateKey",
+        "title",
+        "content",
+        "entryType",
+        "audioDurationSec",
+        "primaryEmotion",
+        "sentimentPolarity",
+        "sentimentScore",
+        "keyTopics",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "WeeklySummary": {
+      "title": "WeeklySummary",
+      "description": "AI-generated summary of a user's top positive memories from the past 7 days.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated owner UID matching request.auth.uid."
+        },
+        "weekLabel": {
+          "type": "string",
+          "description": "Readable date range label for the summarized week."
+        },
+        "headline": {
+          "type": "string",
+          "description": "Warm, uplifting headline for the weekly reflection."
+        },
+        "summaryText": {
+          "type": "string",
+          "description": "Simple, comforting summary paragraph of the week's positive memories."
+        },
+        "highlights": {
+          "type": "array",
+          "description": "Up to 5 short positive memory highlights from the week."
+        },
+        "encouragingClosing": {
+          "type": "string",
+          "description": "Short gentle message encouraging well-being."
+        },
+        "positiveEntryCount": {
+          "type": "integer",
+          "description": "Number of positive entries included in the summary."
+        },
+        "totalEntryCount": {
+          "type": "integer",
+          "description": "Total journal entries reviewed for the week."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "weekLabel",
+        "headline",
+        "summaryText",
+        "highlights",
+        "encouragingClosing",
+        "positiveEntryCount",
+        "totalEntryCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserPreferences": {
+      "title": "UserPreferences",
+      "description": "User reminder schedule and high-contrast accessibility display settings.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated owner UID matching request.auth.uid."
+        },
+        "morningReminderEnabled": {
+          "type": "boolean",
+          "description": "Whether the morning journaling reminder is active."
+        },
+        "morningHour": {
+          "type": "integer",
+          "description": "Morning reminder hour (0-23)."
+        },
+        "morningMinute": {
+          "type": "integer",
+          "description": "Morning reminder minute (0-59)."
+        },
+        "eveningReminderEnabled": {
+          "type": "boolean",
+          "description": "Whether the evening journaling reminder is active."
+        },
+        "eveningHour": {
+          "type": "integer",
+          "description": "Evening reminder hour (0-23)."
+        },
+        "eveningMinute": {
+          "type": "integer",
+          "description": "Evening reminder minute (0-59)."
+        },
+        "reminderMessage": {
+          "type": "string",
+          "description": "Gentle customizable reminder text shown in notifications."
+        },
+        "highContrastDark": {
+          "type": "boolean",
+          "description": "Whether ultra-high-contrast dark display mode is enabled."
+        },
+        "textScaleLevel": {
+          "type": "string",
+          "enum": ["STANDARD", "LARGE", "EXTRA_LARGE"],
+          "description": "Preferred readability text scale level."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp set via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "morningReminderEnabled",
+        "morningHour",
+        "morningMinute",
+        "eveningReminderEnabled",
+        "eveningHour",
+        "eveningMinute",
+        "reminderMessage",
+        "highContrastDark",
+        "textScaleLevel",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/journal_entries/{entryId}": {
+      "schema": { "$ref": "#/entities/JournalEntry" },
+      "description": "User-scoped audio and text journal entries with emotion and sentiment analysis."
+    },
+    "/users/{userId}/weekly_summaries/{weekId}": {
+      "schema": { "$ref": "#/entities/WeeklySummary" },
+      "description": "User-scoped AI summaries of weekly top positive memories."
+    },
+    "/users/{userId}/preferences/{prefId}": {
+      "schema": { "$ref": "#/entities/UserPreferences" },
+      "description": "User-scoped reminder schedules and high-contrast display preferences."
+    }
+  }
+}

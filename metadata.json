@@ -1,0 +1,6 @@
+{
+  "name": "BrightDay",
+  "description": "A simple, high-contrast audio and written memory journal for people living with dementia, with AI journaling prompts, emotion sentiment analysis, weekly positive memory summaries, and gentle daily reminders.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
