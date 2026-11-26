@@ -56,11 +56,13 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.model.TextScaleLevel
 import com.example.model.UserPreferences
-import com.example.reminder.REMINDER_SLOT_TEST
 import com.example.reminder.ReminderScheduler
+import com.example.reminder.WORK_NAME_EVENING
+import com.example.reminder.WORK_NAME_MORNING
 import com.example.ui.components.formatTime12Hour
 
 @Composable
@@ -102,11 +104,12 @@ fun RemindersSettingsScreen(
         }
     }
 
-    LaunchedEffect(preferences) {
-        if (hasNotificationPermission) {
-            ReminderScheduler.syncReminders(context, preferences)
-        }
-    }
+    val morningScheduled by remember(context) {
+        ReminderScheduler.observeReminderActive(context, WORK_NAME_MORNING)
+    }.collectAsStateWithLifecycle(initialValue = false)
+    val eveningScheduled by remember(context) {
+        ReminderScheduler.observeReminderActive(context, WORK_NAME_EVENING)
+    }.collectAsStateWithLifecycle(initialValue = false)
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -171,6 +174,7 @@ fun RemindersSettingsScreen(
                     enabled = preferences.morningReminderEnabled,
                     hour = preferences.morningHour.toInt(),
                     minute = preferences.morningMinute.toInt(),
+                    workScheduled = morningScheduled,
                     testTagPrefix = "morning_reminder",
                     onToggle = { enabled ->
                         val updated = preferences.copy(morningReminderEnabled = enabled)
@@ -201,6 +205,7 @@ fun RemindersSettingsScreen(
                     enabled = preferences.eveningReminderEnabled,
                     hour = preferences.eveningHour.toInt(),
                     minute = preferences.eveningMinute.toInt(),
+                    workScheduled = eveningScheduled,
                     testTagPrefix = "evening_reminder",
                     onToggle = { enabled ->
                         val updated = preferences.copy(eveningReminderEnabled = enabled)
@@ -278,17 +283,13 @@ fun RemindersSettingsScreen(
                                 if (!hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                 } else {
-                                    val sent = ReminderScheduler.showReminderNotification(
+                                    ReminderScheduler.enqueueTestReminderWork(
                                         context = context,
-                                        notificationId = REMINDER_SLOT_TEST,
                                         message = reminderMessageDraft.ifBlank {
                                             "Time to share a gentle thought in BrightDay."
                                         }
                                     )
-                                    onShowMessage(
-                                        if (sent) "Test reminder sent!"
-                                        else "Please allow notifications to receive reminders."
-                                    )
+                                    onShowMessage("Test reminder scheduled — check your notification bar!")
                                 }
                             },
                             modifier = Modifier
@@ -465,10 +466,15 @@ private fun ReminderSlotCard(
     enabled: Boolean,
     hour: Int,
     minute: Int,
+    workScheduled: Boolean,
     testTagPrefix: String,
     onToggle: (Boolean) -> Unit,
     onStepMinutes: (Int) -> Unit
 ) {
+    val countdownLabel = remember(enabled, hour, minute) {
+        if (enabled) ReminderScheduler.formatNextReminderCountdown(hour, minute) else "Paused"
+    }
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
@@ -494,11 +500,25 @@ private fun ReminderSlotCard(
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(28.dp)
                     )
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Column {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (enabled && workScheduled) {
+                                "Scheduled daily • $countdownLabel"
+                            } else if (enabled) {
+                                "Daily reminder • $countdownLabel"
+                            } else {
+                                "Reminder turned off"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("${testTagPrefix}_status")
+                        )
+                    }
                 }
                 Switch(
                     checked = enabled,

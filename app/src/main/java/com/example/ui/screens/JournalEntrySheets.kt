@@ -1,7 +1,10 @@
 package com.example.ui.screens
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,6 +39,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -50,9 +54,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +72,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.R
 import com.example.media.PlayerState
 import com.example.media.RecorderState
@@ -90,16 +99,20 @@ fun AudioRecorderDialog(
     playerState: PlayerState,
     actionState: ActionState,
     onStartRecording: () -> Unit,
+    onPauseRecording: () -> Unit,
+    onResumeRecording: () -> Unit,
     onStopRecording: () -> Unit,
+    onStopAndAnalyze: (String?) -> Unit,
     onResetRecorder: () -> Unit,
     onTogglePreviewPlay: (String) -> Unit,
     onSaveAndAnalyze: (File, Int, String?) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val isDark = LocalHighContrastDark.current
     val recordColor = if (isDark) RecordingCrimsonDark else RecordingCrimson
-    val isBusy = actionState is ActionState.Working
+    val isBusy = actionState is ActionState.Working || recorderState.preparing
 
     var hasAudioPermission by remember {
         mutableStateOf(
@@ -109,13 +122,46 @@ fun AudioRecorderDialog(
             ) == PackageManager.PERMISSION_GRANTED
         )
     }
+    var permissionDeniedOnce by remember { mutableStateOf(false) }
+
+    val latestRecorderState by rememberUpdatedState(recorderState)
+    val latestOnPause by rememberUpdatedState(onPauseRecording)
+
+    // Re-check microphone permission on resume and pause recording if backgrounded
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    val grantedNow = ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.RECORD_AUDIO
+                    ) == PackageManager.PERMISSION_GRANTED
+                    hasAudioPermission = grantedNow
+                    if (grantedNow) permissionDeniedOnce = false
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    if (latestRecorderState.recordingActive && !latestRecorderState.recordingPaused) {
+                        latestOnPause()
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasAudioPermission = granted
         if (granted) {
+            permissionDeniedOnce = false
             onStartRecording()
+        } else {
+            permissionDeniedOnce = true
         }
     }
 
@@ -186,7 +232,11 @@ fun AudioRecorderDialog(
 
                 if (!hasAudioPermission) {
                     Text(
-                        text = stringResource(R.string.audio_permission_needed),
+                        text = if (permissionDeniedOnce) {
+                            stringResource(R.string.audio_permission_denied_help)
+                        } else {
+                            stringResource(R.string.audio_permission_needed)
+                        },
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                         textAlign = TextAlign.Center
@@ -205,10 +255,36 @@ fun AudioRecorderDialog(
                             style = MaterialTheme.typography.labelLarge
                         )
                     }
+                    if (permissionDeniedOnce) {
+                        OutlinedButton(
+                            onClick = {
+                                val intent = Intent(
+                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    Uri.fromParts("package", context.packageName, null)
+                                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(intent)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 56.dp)
+                                .testTag("open_mic_settings_button"),
+                            border = BorderStroke(2.dp, MaterialTheme.colorScheme.outline)
+                        ) {
+                            Icon(Icons.Filled.Settings, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(R.string.audio_open_settings),
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+                    }
                 } else {
                     // Status message
                     val statusText = when {
                         actionState is ActionState.Working -> actionState.statusMessage
+                        recorderState.preparing -> stringResource(R.string.audio_preparing)
+                        recorderState.recordingActive && recorderState.recordingPaused ->
+                            stringResource(R.string.audio_paused)
                         recorderState.recordingActive -> stringResource(R.string.audio_recording_now)
                         recorderState.recordedFile != null -> stringResource(R.string.audio_recorded_ready)
                         else -> stringResource(R.string.audio_tap_to_start)
@@ -221,17 +297,18 @@ fun AudioRecorderDialog(
                     )
 
                     // Big Clear Timer
+                    val liveListening = recorderState.recordingActive && !recorderState.recordingPaused
                     Text(
                         text = formatDurationSeconds(recorderState.elapsedSeconds),
                         style = MaterialTheme.typography.displaySmall,
-                        color = if (recorderState.recordingActive) recordColor else MaterialTheme.colorScheme.onSurface,
+                        color = if (liveListening) recordColor else MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.testTag("audio_timer_text")
                     )
 
                     // High-contrast Audio Level Meter
                     val animatedAmp by animateFloatAsState(
-                        targetValue = if (recorderState.recordingActive) recorderState.amplitudeLevel else 0.08f,
+                        targetValue = if (liveListening) recorderState.amplitudeLevel else 0.08f,
                         label = "audioAmplitude"
                     )
                     Row(
@@ -250,7 +327,7 @@ fun AudioRecorderDialog(
                                     .height(barHeight)
                                     .clip(RoundedCornerShape(7.dp))
                                     .background(
-                                        if (recorderState.recordingActive) recordColor
+                                        if (liveListening) recordColor
                                         else MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
                                     )
                             )
@@ -273,12 +350,13 @@ fun AudioRecorderDialog(
                         ) {
                             CircularProgressIndicator(strokeWidth = 4.dp)
                             Text(
-                                text = (actionState as ActionState.Working).statusMessage,
+                                text = (actionState as? ActionState.Working)?.statusMessage
+                                    ?: stringResource(R.string.audio_preparing),
                                 style = MaterialTheme.typography.titleMedium
                             )
                         }
                     } else if (recorderState.recordedFile == null) {
-                        // Huge unmistakable Start / Stop circular button
+                        // Huge unmistakable Start / Finish & Analyze circular button
                         Box(
                             modifier = Modifier
                                 .size(116.dp)
@@ -290,8 +368,11 @@ fun AudioRecorderDialog(
                                 .border(4.dp, MaterialTheme.colorScheme.outline, CircleShape)
                                 .testTag("audio_record_toggle_button")
                                 .clickable {
-                                    if (recorderState.recordingActive) onStopRecording()
-                                    else onStartRecording()
+                                    if (recorderState.recordingActive) {
+                                        onStopAndAnalyze(promptUsed)
+                                    } else {
+                                        onStartRecording()
+                                    }
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -317,13 +398,76 @@ fun AudioRecorderDialog(
                                 stringResource(R.string.audio_start_button)
                             },
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
                         )
+
+                        if (recorderState.recordingActive) {
+                            // Pause / Resume + Stop & Listen First controls
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        if (recorderState.recordingPaused) onResumeRecording()
+                                        else onPauseRecording()
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 56.dp)
+                                        .testTag("audio_pause_resume_button"),
+                                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.outline)
+                                ) {
+                                    Icon(
+                                        imageVector = if (recorderState.recordingPaused) {
+                                            Icons.Filled.PlayArrow
+                                        } else {
+                                            Icons.Filled.Pause
+                                        },
+                                        contentDescription = null
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text = if (recorderState.recordingPaused) {
+                                            stringResource(R.string.audio_resume_button)
+                                        } else {
+                                            stringResource(R.string.audio_pause_button)
+                                        },
+                                        style = MaterialTheme.typography.labelLarge
+                                    )
+                                }
+
+                                OutlinedButton(
+                                    onClick = onStopRecording,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 56.dp)
+                                        .testTag("audio_stop_preview_button"),
+                                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.outline)
+                                ) {
+                                    Icon(Icons.Filled.Stop, contentDescription = null)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text = stringResource(R.string.audio_stop_preview_button),
+                                        style = MaterialTheme.typography.labelLarge
+                                    )
+                                }
+                            }
+                        }
                     } else {
                         // Recorded preview & Save + AI Analyze buttons
                         val recordedFile = recorderState.recordedFile
                         val fileName = recorderState.recordedFileName.orEmpty()
                         val isPreviewPlaying = playerState.activeFileName == fileName && playerState.playingActive
+                        val fileSizeKb = (recorderState.recordedFileSizeBytes / 1024L).coerceAtLeast(1L)
+
+                        Text(
+                            text = "Voice file ready  •  ${formatDurationSeconds(recorderState.elapsedSeconds)}  •  ${fileSizeKb} KB",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
 
                         OutlinedButton(
                             onClick = { onTogglePreviewPlay(fileName) },

@@ -20,7 +20,8 @@ import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 
 private const val TAG = "JournalAiRepository"
-private const val MODEL_NAME = "gemini-3.8-flash"
+// Ultra-fast Gemini 3.5 Flash-Lite supports both multimodal audio/text NLP and structured JSON
+// with low latency suitable for interactive dementia-friendly journaling UX.
 private const val FAST_MODEL_NAME = "gemini-3.5-flash-lite"
 private const val AI_TIMEOUT_MILLIS = 60_000L
 private const val MAX_INLINE_AUDIO_BYTES = 18 * 1024 * 1024 // Stay safely below 20MB limit
@@ -36,13 +37,33 @@ class JournalAiRepository {
         )
     )
 
-    private val journalAnalysisSchema = Schema.obj(
+    private val audioAnalysisSchema = Schema.obj(
         properties = mapOf(
-            "transcript" to Schema.string(description = "Clean, accurate transcript of the spoken audio or the written entry text"),
+            "transcript" to Schema.string(description = "Clean, accurate transcript of the spoken audio"),
             "title" to Schema.string(description = "Short, warm 3 to 6 word title for this memory"),
             "primaryEmotion" to Schema.enumeration(
                 values = listOf("JOYFUL", "PEACEFUL", "GRATEFUL", "REFLECTIVE", "WORRIED", "SAD"),
                 description = "Primary emotion detected from natural language sentiment and tone"
+            ),
+            "sentimentPolarity" to Schema.enumeration(
+                values = listOf("POSITIVE", "NEUTRAL", "NEEDS_CARE"),
+                description = "Overall emotional polarity of the entry"
+            ),
+            "sentimentScore" to Schema.integer(description = "Positivity and well-being score from 0 to 100"),
+            "positiveHighlight" to Schema.string(description = "One warm, gentle, encouraging sentence highlighting a comforting detail or offering kind reassurance"),
+            "keyTopics" to Schema.array(
+                items = Schema.string(),
+                description = "1 to 4 simple one-or-two-word topics mentioned (such as Family, Garden, Music, Tea)"
+            )
+        )
+    )
+
+    private val textAnalysisSchema = Schema.obj(
+        properties = mapOf(
+            "title" to Schema.string(description = "Short, warm 3 to 6 word title for this memory"),
+            "primaryEmotion" to Schema.enumeration(
+                values = listOf("JOYFUL", "PEACEFUL", "GRATEFUL", "REFLECTIVE", "WORRIED", "SAD"),
+                description = "Primary emotion detected from natural language sentiment"
             ),
             "sentimentPolarity" to Schema.enumeration(
                 values = listOf("POSITIVE", "NEUTRAL", "NEEDS_CARE"),
@@ -69,7 +90,6 @@ class JournalAiRepository {
         )
     )
 
-    // Ultra-fast Gemini Flash-Lite for quick, low-latency journaling starter prompts
     private val promptsModel by lazy {
         Firebase.ai.generativeModel(
             modelName = FAST_MODEL_NAME,
@@ -82,20 +102,36 @@ class JournalAiRepository {
         )
     }
 
-    private val analysisModel by lazy {
+    private val audioAnalysisModel by lazy {
         Firebase.ai.generativeModel(
-            modelName = MODEL_NAME,
+            modelName = FAST_MODEL_NAME,
             generationConfig = generationConfig {
+                temperature = 0.3f
+                maxOutputTokens = 1024
                 responseMimeType = "application/json"
-                responseSchema = journalAnalysisSchema
+                responseSchema = audioAnalysisSchema
+            }
+        )
+    }
+
+    private val textAnalysisModel by lazy {
+        Firebase.ai.generativeModel(
+            modelName = FAST_MODEL_NAME,
+            generationConfig = generationConfig {
+                temperature = 0.3f
+                maxOutputTokens = 384
+                responseMimeType = "application/json"
+                responseSchema = textAnalysisSchema
             }
         )
     }
 
     private val weeklySummaryModel by lazy {
         Firebase.ai.generativeModel(
-            modelName = MODEL_NAME,
+            modelName = FAST_MODEL_NAME,
             generationConfig = generationConfig {
+                temperature = 0.5f
+                maxOutputTokens = 768
                 responseMimeType = "application/json"
                 responseSchema = weeklySummarySchema
             }
@@ -195,7 +231,7 @@ class JournalAiRepository {
 
             val response = withContext(Dispatchers.IO) {
                 withTimeout(AI_TIMEOUT_MILLIS) {
-                    analysisModel.generateContent(inputContent)
+                    audioAnalysisModel.generateContent(inputContent)
                 }
             }
             val rawJson = response.text
@@ -225,7 +261,7 @@ class JournalAiRepository {
             }
 
             val emotionHint = if (preferredEmotion != null) {
-                "The user indicated they feel ${preferredEmotion.displayName} (${preferredEmotion.name}); respect this choice for primaryEmotion unless strongly contradicted."
+                "The user indicated they feel ${preferredEmotion.displayName} (${preferredEmotion.name}); respect this choice for primaryEmotion."
             } else {
                 "Detect primaryEmotion purely from the natural language sentiment of the entry."
             }
@@ -241,8 +277,7 @@ class JournalAiRepository {
                 Journal note:
                 "$trimmed"
 
-                Return structured JSON with:
-                - 'transcript': keep the exact user note text cleanly.
+                Return compact structured JSON with:
                 - 'title': a warm 3-6 word title.
                 - 'primaryEmotion': JOYFUL, PEACEFUL, GRATEFUL, REFLECTIVE, WORRIED, or SAD.
                 - 'sentimentPolarity': POSITIVE, NEUTRAL, or NEEDS_CARE.
@@ -253,7 +288,7 @@ class JournalAiRepository {
 
             val response = withContext(Dispatchers.IO) {
                 withTimeout(AI_TIMEOUT_MILLIS) {
-                    analysisModel.generateContent(instruction)
+                    textAnalysisModel.generateContent(instruction)
                 }
             }
             val rawJson = response.text

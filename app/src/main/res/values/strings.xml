@@ -31,16 +31,23 @@
 
     <!-- Audio Recorder -->
     <string name="audio_sheet_title">Audio Diary</string>
+    <string name="audio_preparing">Starting microphone…</string>
     <string name="audio_tap_to_start">Tap the big button to start speaking</string>
     <string name="audio_recording_now">Listening… speak at your own pace</string>
-    <string name="audio_recorded_ready">Recording saved! Tap Save &amp; Analyze below.</string>
+    <string name="audio_paused">Paused — take your time, tap Resume when ready</string>
+    <string name="audio_recorded_ready">Audio ready! Listen back or analyze your mood below.</string>
     <string name="audio_analyzing">Understanding your voice and feelings…</string>
     <string name="audio_start_button">Start Recording</string>
-    <string name="audio_stop_button">Stop Recording</string>
+    <string name="audio_stop_button">Finish &amp; Analyze Mood</string>
+    <string name="audio_stop_preview_button">Stop &amp; Listen First</string>
+    <string name="audio_pause_button">Pause</string>
+    <string name="audio_resume_button">Resume</string>
     <string name="audio_save_analyze">Save &amp; Analyze Entry</string>
     <string name="audio_record_again">Record Again</string>
     <string name="audio_permission_needed">BrightDay needs microphone permission so you can record voice memories.</string>
+    <string name="audio_permission_denied_help">Microphone access was turned off. Tap Allow Microphone again or open Settings to enable it.</string>
     <string name="audio_grant_permission">Allow Microphone</string>
+    <string name="audio_open_settings">Open App Settings</string>
 
     <!-- Write Note -->
     <string name="write_sheet_title">Write a Memory</string>

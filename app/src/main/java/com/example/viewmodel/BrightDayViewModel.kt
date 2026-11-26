@@ -142,6 +142,7 @@ class BrightDayViewModel(
 
     private var promptJob: Job? = null
     private var weeklySummaryJob: Job? = null
+    private var audioAnalysisJob: Job? = null
 
     init {
         fetchJournalingPrompts()
@@ -152,6 +153,8 @@ class BrightDayViewModel(
     }
 
     fun clearEntryActionState() {
+        audioAnalysisJob?.cancel()
+        audioAnalysisJob = null
         _entryActionState.value = ActionState.Idle
     }
 
@@ -207,7 +210,8 @@ class BrightDayViewModel(
         promptUsed: String?,
         onSaved: () -> Unit
     ) {
-        viewModelScope.launch {
+        if (audioAnalysisJob?.isActive == true) return
+        audioAnalysisJob = viewModelScope.launch {
             _entryActionState.value = ActionState.Working("Understanding your voice and feelings…")
             val analysisResult = aiRepository.analyzeAudioJournal(
                 audioFile = audioFile,

@@ -7,6 +7,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.dp
 import com.example.model.TextScaleLevel
@@ -84,7 +85,7 @@ fun BrightDayTheme(
         TextScaleLevel.LARGE -> 1.12f
         TextScaleLevel.EXTRA_LARGE -> 1.24f
     }
-    val typography = createBrightDayTypography(scaleFactor)
+    val typography = remember(scaleFactor) { createBrightDayTypography(scaleFactor) }
 
     CompositionLocalProvider(LocalHighContrastDark provides highContrastDark) {
         MaterialTheme(

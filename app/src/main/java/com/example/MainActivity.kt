@@ -60,6 +60,8 @@ import com.example.firebase.signOutGoogle
 import com.example.media.AudioJournalController
 import com.example.model.JournalEntry
 import com.example.reminder.ReminderScheduler
+import com.example.reminder.WORK_NAME_EVENING
+import com.example.reminder.WORK_NAME_MORNING
 import com.example.ui.screens.AudioRecorderDialog
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.EmotionDashboardScreen
@@ -93,9 +95,8 @@ class MainActivity : ComponentActivity() {
         // STEP 1: Configure App Check with launch intent BEFORE Compose UI, ViewModels, or Firebase calls
         configureAppCheck(this, intent)
 
-        // STEP 2: Enable edge-to-edge display and notification channel
+        // STEP 2: Enable edge-to-edge display
         enableEdgeToEdge()
-        ReminderScheduler.ensureNotificationChannel(this)
 
         setContent {
             BrightDayRoot()
@@ -189,6 +190,19 @@ private fun BrightDayAuthenticatedShell(
         if (!err.isNullOrBlank()) {
             snackbarHostState.showSnackbar(err)
         }
+    }
+
+    // Keep WorkManager daily reminders synchronized whenever user preferences load or change
+    LaunchedEffect(
+        preferences.morningReminderEnabled,
+        preferences.morningHour,
+        preferences.morningMinute,
+        preferences.eveningReminderEnabled,
+        preferences.eveningHour,
+        preferences.eveningMinute,
+        preferences.reminderMessage
+    ) {
+        ReminderScheduler.syncReminders(context, preferences)
     }
 
     // Keep selectedEntry synced if updated in Firestore
@@ -333,6 +347,8 @@ private fun BrightDayAuthenticatedShell(
                                 onSignOut = {
                                     viewModel.audioController.stopPlayback()
                                     viewModel.audioController.stopSpeaking()
+                                    ReminderScheduler.cancelDailyReminder(context, WORK_NAME_MORNING)
+                                    ReminderScheduler.cancelDailyReminder(context, WORK_NAME_EVENING)
                                     signOutGoogle(credentialManager, scope)
                                 }
                             )
@@ -348,7 +364,19 @@ private fun BrightDayAuthenticatedShell(
                     playerState = playerState,
                     actionState = entryActionState,
                     onStartRecording = { viewModel.audioController.startRecording() },
+                    onPauseRecording = { viewModel.audioController.pauseRecording() },
+                    onResumeRecording = { viewModel.audioController.resumeRecording() },
                     onStopRecording = { viewModel.audioController.stopRecording() },
+                    onStopAndAnalyze = { prompt ->
+                        viewModel.audioController.stopRecording { file, duration ->
+                            viewModel.analyzeAndSaveAudioEntry(
+                                audioFile = file,
+                                durationSec = duration,
+                                promptUsed = prompt,
+                                onSaved = { showAudioDialog = false }
+                            )
+                        }
+                    },
                     onResetRecorder = {
                         viewModel.clearEntryActionState()
                         viewModel.audioController.resetRecorder(deleteUnsavedFile = true)
